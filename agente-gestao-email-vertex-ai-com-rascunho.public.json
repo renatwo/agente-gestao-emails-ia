@@ -1,0 +1,326 @@
+{
+  "name": "Agente de Gestão de E-mail com Vertex AI + Rascunho (template público)",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "labelIds": [
+            "INBOX"
+          ]
+        }
+      },
+      "id": "cf500082-1dbc-4e2b-89b0-8e863ee58c23",
+      "name": "Gmail Trigger - Novo Email",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "messageId",
+              "name": "messageId",
+              "type": "string",
+              "value": "={{$json.id || $json.messageId}}"
+            },
+            {
+              "id": "threadId",
+              "name": "threadId",
+              "type": "string",
+              "value": "={{$json.threadId || ''}}"
+            },
+            {
+              "id": "from",
+              "name": "from",
+              "type": "string",
+              "value": "={{$json.From || $json.from || $json.headers?.from || ''}}"
+            },
+            {
+              "id": "subject",
+              "name": "subject",
+              "type": "string",
+              "value": "={{$json.Subject || $json.subject || $json.headers?.subject || ''}}"
+            },
+            {
+              "id": "body",
+              "name": "body",
+              "type": "string",
+              "value": "={{$json.textPlain || $json.textHtml || $json.snippet || $json.body || ''}}"
+            },
+            {
+              "id": "aiPrompt",
+              "name": "aiPrompt",
+              "type": "string",
+              "value": "=Analise este e-mail e responda APENAS em JSON válido, minificado, em uma única linha, sem markdown e sem texto fora do JSON.\n\nRemetente: {{$json.From || $json.from || $json.headers?.from || ''}}\nAssunto: {{$json.Subject || $json.subject || $json.headers?.subject || ''}}\nCorpo: {{$json.textPlain || $json.textHtml || $json.snippet || $json.body || ''}}\n\nCategorias permitidas: Trabalho, Financeiro, Urgente, Newsletter, Cursos, IA, Publicidade, Spam/Suspeito.\n\nFormato obrigatório:\n{\"categoria\":\"Trabalho|Financeiro|Urgente|Newsletter|Cursos|IA|Publicidade|Spam/Suspeito\",\"resumo\":\"uma frase curta em português\",\"confianca\":0.9}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8f474a5b-0263-4bde-a117-16f3a123ade8",
+      "name": "Preparar Dados do Email",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        272,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{$json.aiPrompt}}",
+        "options": {
+          "systemMessage": "Você é um agente especialista em triagem de e-mails corporativos.\n\nSua única função é analisar o assunto e o corpo do e-mail, classificar em uma categoria e gerar um resumo curto.\n\nCategorias permitidas:\nTrabalho\nFinanceiro\nUrgente\nNewsletter\nCursos\nIA\nPublicidade\nSpam/Suspeito\n\nRegras obrigatórias:\n1. Responda somente JSON válido.\n2. Não use markdown.\n3. Não use bloco de código.\n4. Não escreva explicações fora do JSON.\n5. Use exatamente uma das categorias permitidas.\n6. O resumo deve ter apenas uma frase curta, objetiva e em português do Brasil.\n7. O campo confianca deve ser um número entre 0 e 1.\n\nRegras de decisão obrigatórias:\n1. Se mencionar boleto, pagamento, nota fiscal, cobrança, faturamento, comprovante, vencimento, valor, preço, orçamento, contrato financeiro, reajuste ou financeiro, classifique como Financeiro, exceto se parecer golpe.\n2. Se mencionar inteligência artificial, IA, AI, Gemini, Vertex AI, Google AI Studio, OpenAI, Claude, agentes de IA, machine learning, LLM, n8n com IA ou automação com IA, classifique como IA.\n3. Se mencionar curso, aula, treinamento, certificado, mentoria, webinar, imersão, bootcamp, faculdade ou conteúdo de aprendizado, classifique como Cursos.\n4. Se mencionar promoção, oferta, desconto, cupom, venda, anúncio, campanha comercial ou marketing, classifique como Publicidade.\n5. Se for informativo em massa, notícias, atualização recorrente, atualização de produto ou comunicado automático, classifique como Newsletter.\n6. Use Urgente quando houver prazo curto, cobrança imediata, problema crítico, cliente aguardando, risco operacional, solicitação para hoje, atraso, incidente ou linguagem de prioridade real.\n7. Use Spam/Suspeito para golpe, phishing, remetente estranho, promessa exagerada, links suspeitos, anexos suspeitos, cobrança falsa ou urgência falsa.\n8. Use Trabalho apenas quando for uma demanda profissional geral e não se encaixar em nenhuma regra acima.\n\nOrdem de prioridade:\nSpam/Suspeito > Urgente > Financeiro > Cursos > IA > Publicidade > Newsletter > Trabalho\n\nResponda sempre em JSON minificado, em uma única linha, sem markdown, sem bloco de código e sem texto fora do JSON.\n\nFormato obrigatório:\n{\"categoria\":\"IA\",\"resumo\":\"Resumo curto em uma frase.\",\"confianca\":0.9}"
+        }
+      },
+      "id": "a52688ea-2444-4b24-b37a-042487870c50",
+      "name": "Agente IA - Classificar Email",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        528,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "projectId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_GOOGLE_CLOUD_PROJECT_ID",
+          "mode": "list",
+          "cachedResultName": "REPLACE_WITH_GOOGLE_CLOUD_PROJECT_NAME"
+        },
+        "options": {
+          "maxOutputTokens": 700,
+          "temperature": 0.1
+        },
+        "modelName": "gemini-2.5-flash"
+      },
+      "id": "e323da24-149d-462c-b282-ef1edc1295ae",
+      "name": "Vertex AI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleVertex",
+      "typeVersion": 1,
+      "position": [
+        528,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst original = $('Preparar Dados do Email').first().json;\n\n// Captura a resposta do Agent em vários formatos possíveis do n8n/LangChain\nlet raw =\n  input.output ??\n  input.text ??\n  input.response ??\n  input.result ??\n  input.message ??\n  input.content ??\n  input.data ??\n  input;\n\nif (typeof raw !== 'string') {\n  raw = JSON.stringify(raw);\n}\n\nraw = raw.trim();\n\n// Remove markdown, caso o modelo envie ```json\nraw = raw\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/```$/i, '')\n  .trim();\n\n// Se vier texto junto com JSON, extrai o primeiro objeto JSON completo\nconst jsonMatch = raw.match(/\\{[\\s\\S]*\\}/);\nif (jsonMatch) {\n  raw = jsonMatch[0];\n}\n\nlet parsed;\n\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  // Fallback inteligente para quando o modelo devolver JSON cortado/incompleto\n  const rawLower = raw.toLowerCase();\n  let categoriaDetectada = 'Trabalho';\n\n  if (\n    rawLower.includes('spam') ||\n    rawLower.includes('suspeito') ||\n    rawLower.includes('phishing') ||\n    rawLower.includes('golpe')\n  ) {\n    categoriaDetectada = 'Spam/Suspeito';\n  } else if (\n    rawLower.includes('urgente') ||\n    rawLower.includes('imediato') ||\n    rawLower.includes('hoje') ||\n    rawLower.includes('atraso')\n  ) {\n    categoriaDetectada = 'Urgente';\n  } else if (\n    rawLower.includes('financeiro') ||\n    rawLower.includes('boleto') ||\n    rawLower.includes('pagamento') ||\n    rawLower.includes('nota fiscal') ||\n    rawLower.includes('cobrança') ||\n    rawLower.includes('faturamento')\n  ) {\n    categoriaDetectada = 'Financeiro';\n  } else if (\n    rawLower.includes('curso') ||\n    rawLower.includes('aula') ||\n    rawLower.includes('treinamento') ||\n    rawLower.includes('webinar') ||\n    rawLower.includes('certificado')\n  ) {\n    categoriaDetectada = 'Cursos';\n  } else if (\n    rawLower.includes('\"ia\"') ||\n    rawLower.includes('inteligência artificial') ||\n    rawLower.includes('vertex ai') ||\n    rawLower.includes('gemini') ||\n    rawLower.includes('openai') ||\n    rawLower.includes('claude') ||\n    rawLower.includes('agente de ia') ||\n    rawLower.includes('machine learning') ||\n    rawLower.includes('llm')\n  ) {\n    categoriaDetectada = 'IA';\n  } else if (\n    rawLower.includes('publicidade') ||\n    rawLower.includes('promoção') ||\n    rawLower.includes('oferta') ||\n    rawLower.includes('desconto') ||\n    rawLower.includes('cupom')\n  ) {\n    categoriaDetectada = 'Publicidade';\n  } else if (\n    rawLower.includes('newsletter') ||\n    rawLower.includes('novidades') ||\n    rawLower.includes('notícias') ||\n    rawLower.includes('atualização')\n  ) {\n    categoriaDetectada = 'Newsletter';\n  }\n\n  parsed = {\n    categoria: categoriaDetectada,\n    resumo: 'A IA retornou uma resposta incompleta, mas a categoria foi identificada parcialmente.',\n    confianca: 0.3\n  };\n}\n\nconst categoriasPermitidas = [\n  'Trabalho',\n  'Financeiro',\n  'Urgente',\n  'Newsletter',\n  'Cursos',\n  'IA',\n  'Publicidade',\n  'Spam/Suspeito'\n];\n\nif (!categoriasPermitidas.includes(parsed.categoria)) {\n  parsed.categoria = 'Trabalho';\n}\n\nif (!parsed.resumo) {\n  parsed.resumo = 'E-mail recebido para análise e acompanhamento.';\n}\n\nconst labelMap = {\n  Trabalho: 'REPLACE_LABEL_ID_TRABALHO',\n  Financeiro: 'REPLACE_LABEL_ID_FINANCEIRO',\n  Urgente: 'REPLACE_LABEL_ID_URGENTE',\n  Newsletter: 'REPLACE_LABEL_ID_NEWSLETTER',\n  Cursos: 'REPLACE_LABEL_ID_CURSOS',\n  IA: 'REPLACE_LABEL_ID_IA',\n  Publicidade: 'REPLACE_LABEL_ID_PUBLICIDADE',\n  'Spam/Suspeito': 'REPLACE_LABEL_ID_SPAM_SUSPEITO'\n};\n\nconst gmailLabelId = labelMap[parsed.categoria];\n\nif (!gmailLabelId) {\n  throw new Error(`Categoria sem label configurada: ${parsed.categoria}`);\n}\n\nconst gmailLabelIds = [gmailLabelId];\n\nif (parsed.categoria === 'Urgente') {\n  gmailLabelIds.push('STARRED');\n}\n\n// Evita erro no Telegram quando o remetente vem como: Nome <email@gmail.com>\nconst fromSeguro = String(original.from || 'remetente desconhecido')\n  .replace(/</g, '(')\n  .replace(/>/g, ')');\n\nconst categoriaSegura = String(parsed.categoria || 'Trabalho')\n  .replace(/</g, '(')\n  .replace(/>/g, ')');\n\nconst resumoSeguro = String(parsed.resumo || 'E-mail recebido para análise e acompanhamento.')\n  .replace(/</g, '(')\n  .replace(/>/g, ')');\n\nconst categoriasComRascunho = ['Financeiro', 'Urgente', 'Trabalho'];\nconst criaRascunho = categoriasComRascunho.includes(parsed.categoria);\n\nreturn [\n  {\n    json: {\n      messageId: original.messageId,\n      threadId: original.threadId,\n      from: original.from,\n      subject: original.subject,\n      categoria: parsed.categoria,\n      resumo: parsed.resumo,\n      confianca: parsed.confianca ?? null,\n      gmailLabelId,\n      gmailLabelIds,\n      isUrgente: parsed.categoria === 'Urgente',\n      criaRascunho,\n      rawIaResponse: raw,\n      originalAgentInput: input,\n      telegramMessage: `📧 Novo e-mail de ${fromSeguro} classificado como ${categoriaSegura}. Resumo: ${resumoSeguro}${criaRascunho ? ' 📝 Um rascunho de resposta será criado no Gmail para revisão.' : ''}`\n    }\n  }\n];"
+      },
+      "id": "b74e5bc5-aaee-41dc-a09a-8ab6e9c2ca34",
+      "name": "Normalizar Retorno da IA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://gmail.googleapis.com/gmail/v1/users/me/messages/{{$json.messageId}}/modify",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"addLabelIds\": $json.gmailLabelIds } }}",
+        "options": {}
+      },
+      "id": "99b9f7bd-dca6-4b05-ac7a-ecfc9d72a6d8",
+      "name": "Gmail - Aplicar Label e Estrela",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1104,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "REPLACE_WITH_TELEGRAM_CHAT_ID",
+        "text": "={{$('Normalizar Retorno da IA').first().json.telegramMessage}}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "9309f3ca-2f4e-4f96-a318-5173dc90b41e",
+      "name": "Telegram - Notificar",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1360,
+        0
+      ],
+      "webhookId": "71f5d52b-3812-465e-933d-45c1b83beb14"
+    },
+    {
+      "parameters": {
+        "jsCode": "const normalizado = $('Normalizar Retorno da IA').first().json;\nconst original = $('Preparar Dados do Email').first().json;\n\nconst categoriasComRascunho = ['Financeiro', 'Urgente', 'Trabalho'];\n\nif (!categoriasComRascunho.includes(normalizado.categoria)) {\n  return [];\n}\n\nfunction extractEmail(from) {\n  const value = String(from || '').trim();\n  const match = value.match(/<([^>]+)>/);\n  if (match) return match[1].trim();\n  const emailMatch = value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/i);\n  return emailMatch ? emailMatch[0] : value;\n}\n\nfunction encodeHeader(value) {\n  const str = String(value || 'Sem assunto');\n  if (/^[\\x00-\\x7F]*$/.test(str)) return str;\n  return `=?UTF-8?B?${Buffer.from(str, 'utf8').toString('base64')}?=`;\n}\n\nfunction base64Url(value) {\n  return Buffer.from(value, 'utf8')\n    .toString('base64')\n    .replace(/\\+/g, '-')\n    .replace(/\\//g, '_')\n    .replace(/=+$/g, '');\n}\n\nconst to = extractEmail(normalizado.from || original.from);\nconst subjectOriginal = normalizado.subject || original.subject || 'Sem assunto';\nconst subject = /^re:/i.test(subjectOriginal) ? subjectOriginal : `Re: ${subjectOriginal}`;\n\nconst respostas = {\n  Financeiro: `Olá,\\n\\nRecebi o e-mail referente ao assunto financeiro e vou verificar as informações.\\n\\nCaso seja necessário algum retorno adicional, entrarei em contato.\\n\\nAtt.\\nRenato`,\n  Urgente: `Olá,\\n\\nRecebi sua mensagem e vou tratar esse assunto com prioridade.\\n\\nRetorno assim que possível.\\n\\nAtt.\\nRenato`,\n  Trabalho: `Olá,\\n\\nRecebi sua mensagem e vou analisar as informações.\\n\\nAssim que possível, retorno com uma posição.\\n\\nAtt.\\nRenato`\n};\n\nconst body = respostas[normalizado.categoria] || respostas.Trabalho;\n\nconst mime = [\n  `To: ${to}`,\n  `Subject: ${encodeHeader(subject)}`,\n  'MIME-Version: 1.0',\n  'Content-Type: text/plain; charset=\"UTF-8\"',\n  'Content-Transfer-Encoding: 8bit',\n  '',\n  body\n].join('\\r\\n');\n\nconst message = {\n  raw: base64Url(mime)\n};\n\nif (normalizado.threadId || original.threadId) {\n  message.threadId = normalizado.threadId || original.threadId;\n}\n\nreturn [\n  {\n    json: {\n      to,\n      subject,\n      categoria: normalizado.categoria,\n      draftReplyText: body,\n      draftBody: {\n        message\n      }\n    }\n  }\n];"
+      },
+      "id": "f88c05cd-0440-4169-b95b-258040a7f0af",
+      "name": "Gerar Rascunho de Resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/drafts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.draftBody}}",
+        "options": {}
+      },
+      "id": "d43c1ebc-647f-4903-a739-866c5f4ad018",
+      "name": "Gmail - Criar Rascunho de Resposta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1630,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "REPLACE_WITH_TELEGRAM_CHAT_ID",
+        "text": "={{`📝 Rascunho de resposta criado no Gmail para o e-mail classificado como ${$('Normalizar Retorno da IA').first().json.categoria}. Revise antes de enviar.`}}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "9d7f7274-a3e6-451f-86d9-f2899d0d445e",
+      "name": "Telegram - Avisar Rascunho Criado",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1900,
+        240
+      ],
+      "webhookId": "5db850ae-7574-4aa7-a0a5-5c1e1939474f"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail Trigger - Novo Email": {
+      "main": [
+        [
+          {
+            "node": "Preparar Dados do Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Dados do Email": {
+      "main": [
+        [
+          {
+            "node": "Agente IA - Classificar Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vertex AI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente IA - Classificar Email",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente IA - Classificar Email": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Retorno da IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Retorno da IA": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Aplicar Label e Estrela",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Aplicar Label e Estrela": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Notificar",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gerar Rascunho de Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar Rascunho de Resposta": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Criar Rascunho de Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Criar Rascunho de Resposta": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Avisar Rascunho Criado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": []
+}

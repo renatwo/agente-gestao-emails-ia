@@ -1,0 +1,516 @@
+{
+  "name": "Chat Telegram - Consultar E-mails Gmail (Educado sob demanda) (template público)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "5a6513b4-1aee-4c03-8fcc-d0088f91e7d7",
+      "name": "Telegram Trigger - Pergunta",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "cf7c9fc9-d6f8-47cd-bf72-0e7b90d06420"
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $json.message || {};\nconst chat = msg.chat || {};\nconst from = msg.from || {};\nconst text = String(msg.text || '').trim();\n\nconst CHAT_ID_AUTORIZADO = REPLACE_WITH_TELEGRAM_CHAT_ID;\n\n// Segurança: só responde ao Renato, somente mensagens humanas e somente texto.\nif (from.is_bot === true) return [];\nif (Number(chat.id) !== CHAT_ID_AUTORIZADO) return [];\nif (!text) return [];\n\nreturn [{\n  json: {\n    chatId: chat.id,\n    firstName: chat.first_name || 'Renato',\n    userMessage: text,\n    receivedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "f99d703d-1265-468a-9645-1e7932035aec",
+      "name": "Validar e Normalizar Mensagem Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{$json.userMessage}}",
+        "options": {
+          "systemMessage": "Você é um agente educado e receptivo que interpreta mensagens do Renato no Telegram para consultar e-mails no Gmail.\n\nSua função é transformar a mensagem do usuário em um JSON de controle.\n\nRegras fundamentais:\n1. Responda somente JSON válido minificado, em uma única linha.\n2. Não use markdown.\n3. Não escreva texto fora do JSON.\n4. Nunca envie mensagens por iniciativa própria.\n5. Você só responde porque Renato enviou uma mensagem no Telegram.\n6. Se a mensagem for cumprimento, agradecimento, conversa casual ou pedido confuso sem consulta de e-mail, retorne deve_buscar=false e uma resposta_curta educada.\n7. Se Renato pedir consulta de e-mails, retorne deve_buscar=true e monte query_gmail usando sintaxe de busca do Gmail.\n8. Nunca invente e-mails, remetentes, assuntos ou resultados.\n\nCategorias disponíveis no Gmail:\nTrabalho\nFinanceiro\nUrgente\nNewsletter\nCursos\nIA\nPublicidade\nSpam/Suspeito\n\nRegras para montar query_gmail:\n- Perguntas sobre urgentes: label:Urgente.\n- Perguntas sobre financeiro, boleto, pagamento, cobrança, nota fiscal ou faturamento: label:Financeiro.\n- Perguntas sobre IA, Gemini, Vertex AI, OpenAI, Claude, agentes, LLM ou machine learning: label:IA.\n- Perguntas sobre cursos, aulas, treinamento, certificado, mentoria ou webinar: label:Cursos.\n- Perguntas sobre trabalho, cliente, proposta, reunião ou fornecedor: label:Trabalho.\n- Perguntas sobre newsletter, novidades ou resumo informativo: label:Newsletter.\n- Perguntas sobre publicidade, oferta, promoção, cupom ou desconto: label:Publicidade.\n- Perguntas sobre spam, golpe, phishing ou suspeito: label:\"Spam/Suspeito\".\n- Se perguntar por hoje, adicione newer_than:1d.\n- Se perguntar por esta semana ou últimos dias, use newer_than:7d.\n- Se não informar período, use newer_than:7d.\n- Se pedir últimos e-mails, use newer_than:7d e limite 5.\n- Limite padrão: 5.\n- Limite máximo: 10.\n\nFormato obrigatório quando for consulta:\n{\"deve_buscar\":true,\"intencao\":\"buscar_emails\",\"query_gmail\":\"label:Urgente newer_than:1d\",\"limite\":5,\"resposta_curta\":\"\"}\n\nFormato obrigatório quando não for consulta:\n{\"deve_buscar\":false,\"intencao\":\"conversa\",\"query_gmail\":\"\",\"limite\":0,\"resposta_curta\":\"Olá, Renato! Posso te ajudar a consultar seus e-mails. Você pode perguntar, por exemplo: quais e-mails urgentes chegaram hoje?\"}"
+        }
+      },
+      "id": "a2cc111c-d791-47e5-80a9-a3546f84bf0a",
+      "name": "Agente IA - Interpretar Consulta",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        512,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "projectId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_GOOGLE_CLOUD_PROJECT_ID",
+          "mode": "list",
+          "cachedResultName": "REPLACE_WITH_GOOGLE_CLOUD_PROJECT_NAME"
+        },
+        "options": {
+          "maxOutputTokens": 300,
+          "temperature": 0.1
+        }
+      },
+      "id": "0dad9056-a38c-425b-a596-2cbaab6df022",
+      "name": "Vertex AI Chat Model - Interpretar",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleVertex",
+      "typeVersion": 1,
+      "position": [
+        512,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst telegram = $('Validar e Normalizar Mensagem Telegram').first().json;\n\nlet raw = input.output ?? input.text ?? input.response ?? input.result ?? input;\nif (typeof raw !== 'string') raw = JSON.stringify(raw);\nraw = raw.trim().replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/```$/i, '').trim();\nconst match = raw.match(/\\{[\\s\\S]*\\}/);\nif (match) raw = match[0];\n\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  const msg = (telegram.userMessage || '').toLowerCase();\n\n  // Cumprimentos ou mensagens vagas não disparam busca.\n  if (/^(oi|olá|ola|bom dia|boa tarde|boa noite|obrigado|valeu|teste)$/i.test(msg.trim())) {\n    parsed = {\n      deve_buscar: false,\n      intencao: 'conversa',\n      query_gmail: '',\n      limite: 0,\n      resposta_curta: 'Olá, Renato! Estou pronto para te ajudar a consultar seus e-mails. Você pode perguntar, por exemplo: quais e-mails urgentes chegaram hoje?'\n    };\n  } else {\n    let query = 'newer_than:7d';\n    if (msg.includes('urg')) query = 'label:Urgente newer_than:7d';\n    else if (msg.includes('finance') || msg.includes('boleto') || msg.includes('pagamento') || msg.includes('nota fiscal') || msg.includes('cobrança')) query = 'label:Financeiro newer_than:7d';\n    else if (msg.includes('ia') || msg.includes('gemini') || msg.includes('vertex') || msg.includes('openai') || msg.includes('claude')) query = 'label:IA newer_than:7d';\n    else if (msg.includes('curso') || msg.includes('aula') || msg.includes('treinamento') || msg.includes('webinar')) query = 'label:Cursos newer_than:7d';\n    else if (msg.includes('spam') || msg.includes('suspeito') || msg.includes('phishing') || msg.includes('golpe')) query = 'label:\"Spam/Suspeito\" newer_than:7d';\n    else if (msg.includes('publicidade') || msg.includes('promo') || msg.includes('oferta') || msg.includes('desconto')) query = 'label:Publicidade newer_than:7d';\n    else if (msg.includes('newsletter') || msg.includes('novidade')) query = 'label:Newsletter newer_than:7d';\n    else if (msg.includes('trabalho') || msg.includes('cliente') || msg.includes('proposta') || msg.includes('reuni')) query = 'label:Trabalho newer_than:7d';\n    if (msg.includes('hoje')) query = query.replace('newer_than:7d', 'newer_than:1d');\n    parsed = { deve_buscar: true, intencao: 'buscar_emails', query_gmail: query, limite: 5, resposta_curta: '' };\n  }\n}\n\nconst deveBuscar = parsed.deve_buscar === true;\nlet limite = Number(parsed.limite || 5);\nif (!Number.isFinite(limite) || limite <= 0) limite = 5;\nif (limite > 10) limite = 10;\n\nreturn [{\n  json: {\n    chatId: telegram.chatId,\n    firstName: telegram.firstName,\n    userMessage: telegram.userMessage,\n    deveBuscar,\n    intencao: parsed.intencao || (deveBuscar ? 'buscar_emails' : 'conversa'),\n    query_gmail: deveBuscar ? String(parsed.query_gmail || 'newer_than:7d') : '',\n    limite: deveBuscar ? limite : 0,\n    resposta_curta: parsed.resposta_curta || 'Renato, posso te ajudar a consultar seus e-mails. Me diga o que você quer buscar.',\n    rawInterpreterResponse: raw\n  }\n}];"
+      },
+      "id": "60db1703-aeb1-4284-a84b-21dbc30d9ffc",
+      "name": "Normalizar Consulta Gmail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{$json.query_gmail}}"
+            },
+            {
+              "name": "maxResults",
+              "value": "={{$json.limite}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ae1b6fa1-ace0-4216-96dc-08df1bb7385c",
+      "name": "Gmail - Buscar Emails",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1344,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const busca = $input.first().json;\nconst consulta = $('Normalizar Consulta Gmail').first().json;\nconst messages = busca.messages || [];\n\nif (!messages.length) {\n  return [{\n    json: {\n      semResultados: true,\n      chatId: consulta.chatId,\n      query_gmail: consulta.query_gmail,\n      userMessage: consulta.userMessage\n    }\n  }];\n}\n\nreturn messages.map(m => ({\n  json: {\n    semResultados: false,\n    id: m.id,\n    threadId: m.threadId,\n    chatId: consulta.chatId,\n    query_gmail: consulta.query_gmail,\n    userMessage: consulta.userMessage\n  }\n}));"
+      },
+      "id": "857f6d3d-4cb3-4a5e-be0b-197e894d1b60",
+      "name": "Preparar IDs dos Emails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "faa168d6-28c0-4860-b8f6-e5966beaee4a",
+              "leftValue": "={{$json.semResultados}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b4e65cd4-9c76-4d91-b45a-1811dc3cbd3e",
+      "name": "Tem Resultado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1856,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "=Renato, não encontrei nenhum e-mail relacionado a essa busca.\n\nBusca usada: {{$json.query_gmail}}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "cacbc747-a51d-4b55-9abb-d4df2863e9a8",
+      "name": "Telegram - Sem Resultados",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2096,
+        -64
+      ],
+      "webhookId": "4fc8db92-74b7-46b8-90c6-e3949287955c"
+    },
+    {
+      "parameters": {
+        "url": "=https://gmail.googleapis.com/gmail/v1/users/me/messages/{{$json.id}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "format",
+              "value": "full"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1371c38-8ccc-42dd-bbb2-9641eac7cbe7",
+      "name": "Gmail - Ler Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2096,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function decodeBase64Url(data) {\n  if (!data) return '';\n  try {\n    const normalized = data.replace(/-/g, '+').replace(/_/g, '/');\n    return Buffer.from(normalized, 'base64').toString('utf8');\n  } catch (e) {\n    return '';\n  }\n}\n\nfunction findBody(payload) {\n  if (!payload) return '';\n  if (payload.mimeType === 'text/plain' && payload.body?.data) return decodeBase64Url(payload.body.data);\n  if (payload.parts) {\n    for (const part of payload.parts) {\n      const found = findBody(part);\n      if (found) return found;\n    }\n  }\n  if (payload.body?.data) return decodeBase64Url(payload.body.data);\n  return '';\n}\n\nfunction header(headers, name) {\n  return (headers || []).find(h => String(h.name).toLowerCase() === name.toLowerCase())?.value || '';\n}\n\nconst items = $input.all();\nconst consulta = $('Normalizar Consulta Gmail').first().json;\n\nconst emails = items.map((item, index) => {\n  const email = item.json;\n  const headers = email.payload?.headers || [];\n  const from = header(headers, 'From').replace(/</g, '(').replace(/>/g, ')');\n  const subject = header(headers, 'Subject') || '(sem assunto)';\n  const date = header(headers, 'Date');\n  const body = findBody(email.payload) || email.snippet || '';\n  const cleanBody = String(body).replace(/\\s+/g, ' ').slice(0, 800);\n  return `${index + 1}. Assunto: ${subject}\nDe: ${from}\nData: ${date}\nResumo bruto: ${cleanBody}`;\n});\n\nconst emailListText = emails.join('\\n\\n');\n\nreturn [{\n  json: {\n    chatId: consulta.chatId,\n    userMessage: consulta.userMessage,\n    query_gmail: consulta.query_gmail,\n    totalEmails: emails.length,\n    emailListText\n  }\n}];"
+      },
+      "id": "c8a44953-a122-447d-bc3d-04f79bc3fe0b",
+      "name": "Preparar Conteúdo para Resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2352,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Pergunta do usuário no Telegram:\n{{$json.userMessage}}\n\nBusca Gmail usada:\n{{$json.query_gmail}}\n\nE-mails encontrados:\n{{$json.emailListText}}",
+        "options": {
+          "systemMessage": "Você é um assistente educado, receptivo e profissional que ajuda Renato a consultar e entender seus e-mails pelo Telegram.\n\nComportamento:\n1. Responda somente porque Renato enviou uma pergunta no Telegram.\n2. Nunca envie mensagens por iniciativa própria.\n3. Seja cordial, claro e objetivo.\n4. Use português do Brasil.\n5. Não invente e-mails, remetentes, assuntos ou informações.\n6. Resuma apenas os e-mails fornecidos pelo workflow.\n7. Liste no máximo 5 itens.\n8. Para cada item, mostre categoria provável, remetente, assunto e resumo curto.\n9. Se houver algo urgente ou financeiro, destaque com emoji.\n10. Não use HTML.\n11. Não use markdown complexo.\n12. Não prometa responder, excluir, arquivar ou alterar e-mails. Apenas consulte e resuma.\n13. Termine com uma frase curta e útil, por exemplo: \"Posso buscar outra categoria se você quiser.\".\n\nTom:\nEducado, receptivo, profissional, leve e amigável."
+        }
+      },
+      "id": "67bd16fa-bf13-41eb-b83a-b90767693029",
+      "name": "IA - Responder Consulta",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        2608,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "projectId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_GOOGLE_CLOUD_PROJECT_ID",
+          "mode": "list",
+          "cachedResultName": "REPLACE_WITH_GOOGLE_CLOUD_PROJECT_NAME"
+        },
+        "options": {
+          "maxOutputTokens": 700,
+          "temperature": 0.2
+        }
+      },
+      "id": "d552ff1c-f64e-4a5a-b690-6d856c13d047",
+      "name": "Vertex AI Chat Model - Responder",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleVertex",
+      "typeVersion": 1,
+      "position": [
+        2608,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst base = $('Preparar Conteúdo para Resposta').first().json;\nlet resposta = input.output ?? input.text ?? input.response ?? input.result ?? '';\nif (typeof resposta !== 'string') resposta = JSON.stringify(resposta);\nresposta = resposta.trim();\nif (!resposta) {\n  resposta = `Encontrei ${base.totalEmails} e-mail(s), mas não consegui gerar o resumo agora.`;\n}\nif (resposta.length > 3500) resposta = resposta.slice(0, 3500) + '\\n...';\nreturn [{ json: { chatId: base.chatId, respostaTelegram: resposta } }];"
+      },
+      "id": "583bd58a-3df6-4859-b6a0-05bf11414020",
+      "name": "Normalizar Resposta Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2928,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{$json.respostaTelegram}}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "43988a92-735f-4ff5-a839-cca13bc1e92f",
+      "name": "Telegram - Responder Consulta",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3184,
+        256
+      ],
+      "webhookId": "04431568-60a7-4293-8075-270aaa6663ab"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c141ba25-316f-452c-898a-537146dc46b7",
+              "leftValue": "={{$json.deveBuscar}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5d86dea3-ee4d-4933-9dea-45eb5acd393a",
+      "name": "Deve Buscar Emails?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1088,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{$json.resposta_curta}}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "eadffd7f-48d4-41eb-8f32-d7bca931bd49",
+      "name": "Telegram - Orientar Pergunta",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1344,
+        -160
+      ],
+      "webhookId": "3d84558b-055c-4e97-92bb-bb0ef74f4fc5"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger - Pergunta": {
+      "main": [
+        [
+          {
+            "node": "Validar e Normalizar Mensagem Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar e Normalizar Mensagem Telegram": {
+      "main": [
+        [
+          {
+            "node": "Agente IA - Interpretar Consulta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vertex AI Chat Model - Interpretar": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente IA - Interpretar Consulta",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente IA - Interpretar Consulta": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Consulta Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Consulta Gmail": {
+      "main": [
+        [
+          {
+            "node": "Deve Buscar Emails?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deve Buscar Emails?": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Buscar Emails",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram - Orientar Pergunta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Buscar Emails": {
+      "main": [
+        [
+          {
+            "node": "Preparar IDs dos Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar IDs dos Emails": {
+      "main": [
+        [
+          {
+            "node": "Tem Resultado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Resultado?": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Sem Resultados",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail - Ler Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Ler Email": {
+      "main": [
+        [
+          {
+            "node": "Preparar Conteúdo para Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Conteúdo para Resposta": {
+      "main": [
+        [
+          {
+            "node": "IA - Responder Consulta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vertex AI Chat Model - Responder": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "IA - Responder Consulta",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IA - Responder Consulta": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Resposta Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Resposta Telegram": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Responder Consulta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "active": false,
+  "tags": []
+}
