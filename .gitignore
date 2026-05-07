@@ -1,0 +1,10 @@
+.env
+.env.*
+*.key
+*.pem
+credentials.json
+service-account.json
+token.json
+*.log
+node_modules/
+.DS_Store
